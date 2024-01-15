@@ -10,4 +10,4 @@ pyqt6\
 pyside6\
 Thorlabs BPC303\
 scipy\
-//github.com/MSLNZ/msl-equipment/archive/main.zip\
+//github.com/MSLNZ/msl-equipment/archive/main.zip
