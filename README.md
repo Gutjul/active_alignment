@@ -1,7 +1,8 @@
 # active_alignment
-Github repository for performing active alignment using Nano PN setup.\\
+Github repository for performing active alignment using Nano PN setup.\
 
-Dependencies (needs to be installed with pip):\\
+Dependencies (needs to be installed with pip):\
+
 pythonnet\
 pyvisa\
 nidaqmx\
