@@ -250,11 +250,11 @@ class MainWindow(QMainWindow):
         piezo_raster_button.clicked.connect(self.run_piezo_raster)
         
         # Stepper scan step size (sss)
-        self.piezo_step_size_box = QLineEdit("0.1")
-        self.piezo_step_size_box.textChanged.connect(self.piezo_sss_value_changed)
+        self.piezo_step_size_box = QLineEdit("0.2")
+        # self.piezo_step_size_box.textChanged.connect(self.piezo_sss_value_changed)
         self.piezo_step_size_box.setValidator(QDoubleValidator(0, 1, 10))
         self.piezo_step_size_box.setMaximumWidth(75)
-        layout_controller.addWidget(QLabel("Step size [microns]"), raster_row + 5, raster_column)
+        layout_controller.addWidget(QLabel("Step size [V]"), raster_row + 5, raster_column)
         layout_controller.addWidget(self.piezo_step_size_box, raster_row + 5, raster_column + 1, 1, 3)
 
         # Stepper scan step size width (sssw)
@@ -392,6 +392,7 @@ class MainWindow(QMainWindow):
         layoutbotter.addLayout(keyboard_layout)
         layoutbotter.addWidget(self.raster_label)
         self.plot_raster(np.array([]), np.array([]), np.array([[], []]))
+        self.save_button.setEnabled(False)
         layoutbigger = QVBoxLayout()
         layoutbigger.addLayout(layoutbig)
         
@@ -420,16 +421,16 @@ class MainWindow(QMainWindow):
         stepper controller is adjusted to the chosen value
         """
         for i in range(2):
-            self.setup.jog_step_size[i] = float(val)
-            self.setup.jog_step_size_int[i] = int(self.setup.jog_step_size[i] * self.setup.stepper.calibration_number[i])
-    def piezo_sss_value_changed(self, val):
-        """
-        When step size value is changed in window, the jog step size of the
-        stepper controller is adjusted to the chosen value
-        """
-        for i in range(2):
-            self.setup.jog_step_size[i] = float(val)
-            self.setup.jog_step_size_int[i] = int(self.setup.jog_step_size[i] * self.setup.stepper.calibration_number[i])
+            self.setup.stepper.jog_step_size[i] = float(val)
+            self.setup.stepper.jog_step_size_int[i] = int(self.setup.stepper.jog_step_size[i] * self.setup.stepper.calibration_number[i])
+    # def piezo_sss_value_changed(self, val):
+    #     """
+    #     When step size value is changed in window, the jog step size of the
+    #     stepper controller is adjusted to the chosen value
+    #     """
+    #     # for i in range(2):
+    #     #     self.setup.stepper.jog_step_size[i] = float(val)
+    #     #     self.setup.stepper.jog_step_size_int[i] = int(self.setup.jog_step_size[i] * self.setup.stepper.calibration_number[i])
     
     def update_power_reading(self):
         """
@@ -460,6 +461,7 @@ class MainWindow(QMainWindow):
             box.setValue(result[i])
         self.plot_raster(X, Y, Z.T)
         
+        
     def run_piezo_raster(self):
         """
         Runs a raster scan with the stepper motor controller using the values from the 
@@ -472,7 +474,6 @@ class MainWindow(QMainWindow):
             axes.append(1)
         if self.piezo_z_checkbox.isChecked():
             axes.append(2)
-        print(axes)
         if len(axes) != 2:
             raise ValueError("Two axes can be scanned at a time")
             
@@ -485,28 +486,30 @@ class MainWindow(QMainWindow):
         # Loop below sets the found values in the position boxes of the window.
         # for i, box in enumerate([self.x_stepper_box, self.y_stepper_box, self.z_stepper_box]):
         #     box.setValue(result[i])
-        self.plot_raster(X, Y, Z)
+        self.plot_raster(X, Y, Z, axes)
         
 
-    def plot_raster(self, X, Y, Z):
+    def plot_raster(self, X, Y, Z, axes = [0, 1]):
+    
         """
         Simply plots the raster results in a 3D surface.
         First saves the plot as an image and then imports it to the window.
         """
-        fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+        ax_labels = ["X", "Y", "Z"]
+        fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize = (8, 8))
         surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
                                 linewidth=0, antialiased=False)
-        fig.set_figheight(8)
-        fig.set_figwidth(8)
-        ax.set_xlabel("X position [microns]", fontsize=14, rotation=0)
-        ax.set_ylabel("Y position [microns]", fontsize=14, rotation=0)
-        ax.set_zlabel("Photodetector voltage [V]", fontsize=14, rotation=0)
+        # fig.set_figheight(8)
+        # fig.set_figwidth(8)
+        ax.set_xlabel("\n" + ax_labels[axes[0]] + " position [microns]", fontsize=14, rotation=0, linespacing = 2.7)
+        ax.set_ylabel("\n" + ax_labels[axes[1]] + " position [microns]", fontsize=14, rotation=0, linespacing = 2.7)
+        ax.set_zlabel("\nPhotodetector voltage [V]", fontsize=14, rotation=0, linespacing = 2.7)
         ax.tick_params(labelsize=14)
-        ax.set_box_aspect(None, zoom=0.85)
+        ax.set_box_aspect(None, zoom=0.80)
         plt.savefig("./raster_scan.png", bbox_inches='tight')
         self.raster_plot = QPixmap("./raster_scan.png")
         self.raster_label.setPixmap(self.raster_plot)
-
+        self.save_button.setEnabled(True)
     def keyPressEvent(self, event: QKeyEvent):
         """
         This function is used for the keyboard control. Initiated whenever
@@ -668,10 +671,13 @@ class MainWindow(QMainWindow):
                         self.x_stepper_box, self.y_stepper_box, self.z_stepper_box]):
                 box.setValue(pos[i])
     def saveFunc(self):
-        name = QFileDialog.getSaveFileName(self, 'Save File',"Pickle (*.pkl)")
-        
-        with open(name[0] + '.pkl', 'wb') as f:
-            pickle.dump(self.setup.raster_data, f)
+        try:
+            name = QFileDialog.getSaveFileName(self, 'Save File',"Pickle (*.pkl)")
+            
+            with open(name[0] + '.pkl', 'wb') as f:
+                pickle.dump(self.setup.raster_data, f)
+        except Exception as e:
+            print("There is not data to save yet")
     def closeEvent(self, *args, **kwargs):
         self.signal_button.setChecked(False) # If this not done some error with the Santec powermeter connection occurs.
         if self.setup.simulate != True:

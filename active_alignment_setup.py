@@ -339,8 +339,8 @@ class Active_Alignment_Setup():
             # Now translating from voltages on DAQ to physical positions
             X = X * self.piezo_calibration[axes[0]]
             Y = Y * self.piezo_calibration[axes[1]]
-            local_max[axes[0]] = self.piezo_calibration[axes[0]]*local_max[0]
-            local_max[axes[1]] = self.piezo_calibration[axes[1]]*local_max[1]
+            local_max[0] = self.piezo_calibration[axes[0]]*local_max[0]
+            local_max[1] = self.piezo_calibration[axes[1]]*local_max[1]
             end_position = init_position
             end_position[axes] = local_max
             end_position[const_axis] = const_pos
@@ -390,7 +390,6 @@ class Active_Alignment_Setup():
             positions_x = np.array([xi])
         else:
             positions_x = np.arange(xi, xf, self.stepper.jog_step_size[0])
-        print(positions_x)
         if yi == yf:
             positions_y = np.array([yi])
         else:
