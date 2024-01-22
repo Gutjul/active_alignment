@@ -6,6 +6,7 @@ Created on Tue Sep  5 11:36:06 2023
 """
 import numpy as np
 import time
+import pickle
 from PyQt6 import QtGui
 from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer, Qt
@@ -32,6 +33,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
+    QTextEdit,
+    QFileDialog,
 )
 from PyQt6.QtGui import QPixmap, QKeyEvent, QDoubleValidator
 from PySide6.QtDataVisualization import Q3DSurface
@@ -69,7 +72,7 @@ class MainWindow(QMainWindow):
         self.setup = Active_Alignment_Setup(simulate = False, zero = False,
                             piezo_ID = '71345664', stepper_ID = '70391704') # Intiate setup object
         layout_controller = QGridLayout()
-        layoutbig = QHBoxLayout()
+        layoutbig = QGridLayout()
         self.x_box = QDoubleSpinBox()
         x_label = QLabel()
         x_label.setText("X (microns):")
@@ -123,17 +126,17 @@ class MainWindow(QMainWindow):
             box.setValue(self.setup.position[i + 3])
             box.editingFinished.connect(self.pos_value_changed)
             box.setSingleStep(0.1)
-        self.keyboard_control_button = QPushButton("Activate keyboard control (Q, W, E, A, S, D)")
+        self.keyboard_control_button = QPushButton("Keyboard control (Q, W, E, A, S, D)")
         self.keyboard_control_button.setCheckable(True)
         self.disable_x_stepper_button = QPushButton("Disable")
         self.disable_x_stepper_button.setCheckable(True)
-        self.disable_x_stepper_button.toggled.connect(lambda: self.disable_channel(self.disable_x_stepper_button.isChecked(), 1))
+        self.disable_x_stepper_button.toggled.connect(lambda: self.disable_channel(self.disable_x_stepper_button, 1))
         self.disable_y_stepper_button = QPushButton("Disable")
         self.disable_y_stepper_button.setCheckable(True)
-        self.disable_y_stepper_button.toggled.connect(lambda: self.disable_channel(self.disable_y_stepper_button.isChecked(), 2))
+        self.disable_y_stepper_button.toggled.connect(lambda: self.disable_channel(self.disable_y_stepper_button, 2))
         self.disable_z_stepper_button = QPushButton("Disable")
         self.disable_z_stepper_button.setCheckable(True)
-        self.disable_z_stepper_button.toggled.connect(lambda: self.disable_channel(self.disable_z_stepper_button.isChecked(), 3))
+        self.disable_z_stepper_button.toggled.connect(lambda: self.disable_channel(self.disable_z_stepper_button, 3))
         self.home_x_stepper_button = QPushButton("Home")
         self.home_x_stepper_button.clicked.connect(lambda: self.home_stepper_channel(1))
         self.home_y_stepper_button = QPushButton("Home")
@@ -143,6 +146,10 @@ class MainWindow(QMainWindow):
         self.home_all_button = QPushButton("Home all")
         self.home_all_button.clicked.connect(self.home_all_controllers)
         self.home_status_label = QLabel("")
+        
+        self.keyboard_control_message = QLabel("   ")
+        self.keyboard_control_message.setStyleSheet('color: red')
+        
         layout_controller.addWidget(QLabel("Piezo coordinates:"), 0, 0)
         layout_controller.addWidget(QLabel("X (microns):"), 1, 0)
         layout_controller.addWidget(self.x_box, 1, 1)
@@ -168,10 +175,14 @@ class MainWindow(QMainWindow):
         layout_controller.addWidget(self.home_z_stepper_button, 7, 3)
         layout_controller.addWidget(self.home_all_button, 8, 0)
         layout_controller.addWidget(self.home_status_label, 8, 1)
-        layoutbig.addLayout(layout_controller)
+        layout_controller.addWidget(self.keyboard_control_button, 9, 0, 1, 2)
+        layout_controller.addWidget(self.keyboard_control_message, 9, 2, 1, 2)
+        layout_controller.setAlignment(Qt.AlignmentFlag.AlignTop)
+        
         
         
         # Add powermeter section
+        powermeter_column = 4
         self.powcombobox = QComboBox()
         for name in self.setup.power_readers:
             self.powcombobox.addItem(name)
@@ -180,93 +191,144 @@ class MainWindow(QMainWindow):
         self.powcombobox.currentIndexChanged.connect(self.powselectionchange)
         self.refresh_pow_button = QPushButton('Refresh')
         self.refresh_pow_button.clicked.connect(self.refresh_pow)
+        layout_controller.addWidget(QLabel("Power meter section"), 0, powermeter_column)
+        layout_controller.addWidget(QLabel("Photodetector:"), 1, powermeter_column)
+        layout_controller.addWidget(self.powcombobox, 1, powermeter_column + 1)
+        layout_controller.addWidget(self.refresh_pow_button, 1, powermeter_column + 2)
+
+        layout_controller.addWidget(self.signal, 2, powermeter_column, 2, 2)
+        layout_controller.addWidget(self.signal_button, 2, powermeter_column + 2)
         
-        # self.santec_gui_button = QPushButton("Open Santec GUI")
-        # self.santec_gui_button.clicked.connect(self.open_santec_gui)
+        layoutbig.addLayout(layout_controller, 0, 0)
         
-        layout_power_large = QVBoxLayout()
-        layout_power = QGridLayout()
-        layout_power.addWidget(QLabel("Power meter section"), 0, 0)
-        layout_power.addWidget(QLabel("Photodetector:"), 1, 0)
-        layout_power.addWidget(self.powcombobox, 1, 1)
-        layout_power.addWidget(self.refresh_pow_button, 1, 2)
-        layout_signal = QGridLayout()
-        layout_signal.addWidget(self.signal, 0, 0)
-        layout_signal.addWidget(self.signal_button, 0, 1)
-        layout_power_large.addLayout(layout_power)
-        layout_power_large.addLayout(layout_signal)
-        #layout_power_large.addWidget(self.santec_gui_button)
-        layout_power_large.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layoutbig.addLayout(layout_power_large)
         
-        layout_raster = QVBoxLayout()
-        layout_raster.addWidget(QLabel("Raster section"))
+        # add raster scanning section 
+        # First for stepper motor
+        raster_column = 7
+        raster_row = 0
+        layout_raster = QGridLayout()
+        layout_controller.addWidget(QLabel("Stepper raster section"), raster_row, raster_column)
         stepper_raster_button = QPushButton("Run stepper raster")
         stepper_raster_button.clicked.connect(self.run_stepper_raster)
         
         # Stepper scan step size (sss)
-        layout_sss = QHBoxLayout()
         self.stepper_step_size_box = QLineEdit("0.01")
         self.stepper_step_size_box.textChanged.connect(self.sss_value_changed)
         self.stepper_step_size_box.setValidator(QDoubleValidator(0, 1, 10))
-        layout_sss.addWidget(QLabel("Step size [mm]"))
-        layout_sss.addWidget(self.stepper_step_size_box)
-  
+        self.stepper_step_size_box.setMaximumWidth(75)
+        layout_controller.addWidget(QLabel("Step size [mm]"), 1, raster_column)
+        layout_controller.addWidget(self.stepper_step_size_box, raster_row + 1, raster_column + 1, 1, 3)
         
-        layout_raster.addLayout(layout_sss)
+        
+        #layout_raster.addLayout(layout_sss, 1, 0, 1, 3)
         
         # Stepper scan step size width (sssw)
-        layout_sssw = QHBoxLayout()
         self.stepper_step_scan_width_x = QLineEdit("0.1")
-        self.stepper_step_scan_width_x.setMaximumWidth(50)
+        self.stepper_step_scan_width_x.setMaximumWidth(75)
         self.stepper_step_scan_width_x.setValidator(QDoubleValidator(0, 1, 10))  # Setting bounds for step size edit boxes
 
         self.stepper_step_scan_width_y = QLineEdit("0.1")
-        self.stepper_step_scan_width_y.setMaximumWidth(50)
+        self.stepper_step_scan_width_y.setMaximumWidth(75)
         self.stepper_step_scan_width_y.setValidator(QDoubleValidator(0, 1, 10))  # Setting bounds for step size edit boxes
     
-        stepper_step_size_width_label = QLabel("Scan width (x, y) [mm]")
-        layout_sssw.addWidget(stepper_step_size_width_label)
-        layout_sssw.addWidget(self.stepper_step_scan_width_x)
-        layout_sssw.addWidget(self.stepper_step_scan_width_y)
+        layout_controller.addWidget( QLabel("Scan width (x, y) [mm]"), raster_row + 2, raster_column, 1, 1)
+        layout_controller.addWidget(self.stepper_step_scan_width_x, raster_row + 2, raster_column + 1, 1, 3)
+        layout_controller.addWidget(self.stepper_step_scan_width_y, raster_row + 2, raster_column + 4, 1, 3)
+        
+        
+        #layout_controller.addLayout(layout_sssw, 2, 0, 1, 3)
+        
+        
+        
+        layout_controller.addWidget(stepper_raster_button, raster_row + 3, raster_column + 1, 1, 6)
+        
+        
+        # add piezo raster section
+        
+        layout_controller.addWidget(QLabel("Piezo raster section"), raster_row + 4, raster_column)
+        piezo_raster_button = QPushButton("Run piezo raster")
+        piezo_raster_button.clicked.connect(self.run_piezo_raster)
+        
+        # Stepper scan step size (sss)
+        self.piezo_step_size_box = QLineEdit("0.1")
+        self.piezo_step_size_box.textChanged.connect(self.piezo_sss_value_changed)
+        self.piezo_step_size_box.setValidator(QDoubleValidator(0, 1, 10))
+        self.piezo_step_size_box.setMaximumWidth(75)
+        layout_controller.addWidget(QLabel("Step size [microns]"), raster_row + 5, raster_column)
+        layout_controller.addWidget(self.piezo_step_size_box, raster_row + 5, raster_column + 1, 1, 3)
+
+        # Stepper scan step size width (sssw)
+
+        self.piezo_step_scan_width_x = QLineEdit("30")
+        self.piezo_step_scan_width_x.setMaximumWidth(75)
+        self.piezo_step_scan_width_x.setValidator(QDoubleValidator(0, 1, 10))  # Setting bounds for step size edit boxes
+
+        self.piezo_step_scan_width_y = QLineEdit("30")
+        self.piezo_step_scan_width_y.setMaximumWidth(75)
+        self.piezo_step_scan_width_y.setValidator(QDoubleValidator(0, 1, 10))  # Setting bounds for step size edit boxes
+        
+        layout_controller.addWidget(QLabel("Scan width (x, y) [microns]"), raster_row + 6, raster_column)
+        layout_controller.addWidget(self.piezo_step_scan_width_x, raster_row + 6, raster_column + 1, 1, 3)
+        layout_controller.addWidget(self.piezo_step_scan_width_y, raster_row + 6, raster_column + 4, 1, 3)
 
         
-        layout_raster.addLayout(layout_sssw)
+        layout_controller.addWidget(QLabel("Axes for piezo raster:"), raster_row + 7, raster_column, 1, 1)
         
-        layout_raster.addWidget(stepper_raster_button)
+        layout_controller.addWidget(QLabel("x:"), raster_row + 7, raster_column + 1, 1, 1)
         
-        layoutbig.addLayout(layout_raster)
+        self.piezo_x_checkbox = QCheckBox()
+        self.piezo_x_checkbox.setChecked(True)
+        self.piezo_y_checkbox = QCheckBox()
+        self.piezo_y_checkbox.setChecked(True)
+        self.piezo_z_checkbox = QCheckBox()
+        layout_controller.addWidget(self.piezo_x_checkbox, raster_row + 7, raster_column + 2, 1, 1)
+        layout_controller.addWidget(QLabel("y:"), raster_row + 7, raster_column + 3, 1, 1)
         
+        layout_controller.addWidget(self.piezo_y_checkbox, raster_row + 7, raster_column + 4, 1, 1)
         
+        layout_controller.addWidget(QLabel("z:"), raster_row + 7, raster_column + 5, 1, 1)
+        
+        layout_controller.addWidget(self.piezo_z_checkbox, raster_row + 7, raster_column + 6, 1, 1)
+        
+        layout_controller.addWidget(piezo_raster_button, raster_row + 8, raster_column + 1, 1, 6)
+            
+        # layoutbig.addLayout(layout_raster, 0, 2, 3, 1)
         
         # Now the optimization part
-        layout4 = QVBoxLayout()
-        layout_init4 = QHBoxLayout()
         
-        self.optim_res = QLabel("")
-        layout_init4.addWidget(self.optim_res)
+        optim_column = 7
+        optim_row = 9
         
+        self.optim_res = QLineEdit()
+        self.optim_res.setReadOnly(True)
+
+        layout_controller.addWidget(QLabel("Optimization results:"), optim_row, optim_column)
         
-        
+        layout_controller.addWidget(self.optim_res, optim_row, optim_column + 1, 1, 6)
         
         layout_init5 = QHBoxLayout()
         self.optimize_button_stepper = QPushButton("Quick optimize")
         self.optimize_button_stepper.clicked.connect(self.quick_optimize)
         
         
-        layout_raster.addWidget(self.optimize_button_stepper)
-        
-        layout_init6 = QHBoxLayout()
+        layout_controller.addWidget(self.optimize_button_stepper, optim_row + 1, optim_column + 1, 1, 6)
+
         self.piezo_optimize_button = QPushButton("Piezo optimize (xy)")
         self.piezo_optimize_button.clicked.connect(lambda: self.optimize(
             axes = [0, 1], step_sizes = [0.1, 0.1], method = "Hill climb"))
-        layout_init6.addWidget(self.piezo_optimize_button)
+        layout_controller.addWidget(self.piezo_optimize_button, optim_row + 2, optim_column + 1, 1, 3)
         self.optimize_with_z_button = QPushButton("Piezo optimize (xyz)")
         self.optimize_with_z_button.clicked.connect(lambda: self.optimize(
             axes = [0, 1, 2], step_sizes = [0.1, 0.1, 1.0], method = "Pattern search"))
-        layout_init6.addWidget(self.optimize_with_z_button)
-        layout_raster.addLayout(layout_init6)
-
+        layout_controller.addWidget(self.optimize_with_z_button, optim_row + 2, optim_column + 4, 1, 3)
+        self.save_button = QPushButton("Save")
+        
+        self.save_button.clicked.connect(self.saveFunc)
+        layout_controller.addWidget(self.save_button, optim_row + 3, optim_column + 1, 1, 6)
+    
+    
+    
+    
         self.optimize_method = QComboBox()
         self.optimize_method.addItem("Pattern search")
         self.optimize_method.addItem("Hill climb")
@@ -283,25 +345,26 @@ class MainWindow(QMainWindow):
         optimize_layout.addWidget(self.optimize_method, 1, 1)
         optimize_layout.addWidget(self.optimize_button, 1, 2)
         
-        
-        
         optimize_layout.addWidget(QLabel("Axis:"), 2, 0)
         optimize_layout.addWidget(QLabel("Enable:"), 3, 0)
         optimize_layout.addWidget(QLabel("Step size:"), 4, 0)
         bounds = [[0, 30], [0, 30], [0, 30], [0, 4], [0, 4], [0, 6]]
         initial_values = [0.1, 0.1, 1.0, 0.0005, 0.0005, 0.01]
         for i, label in enumerate(["x piezo", "y piezo", "z piezo", "x stepper", "y stepper", "yaw stepper"]):
-            optimize_layout.addWidget(QLabel(label), 2, i + 1)
-            optimize_layout.addWidget(self.axis_check_boxes[i], 3, i + 1)
-            optimize_layout.addWidget(self.step_size_boxes[i], 4, i + 1)
+            optimize_layout.addWidget(QLabel(label), 3, i + 1)
+            optimize_layout.addWidget(self.axis_check_boxes[i], 4, i + 1)
+            optimize_layout.addWidget(self.step_size_boxes[i], 5, i + 1)
             self.step_size_boxes[i].setText(str(initial_values[i]))
             self.step_size_boxes[i].setValidator(
                 QDoubleValidator(bounds[i][0], bounds[i][1], 10))  # Setting bounds for step size edit boxes
             
-        layout_raster.addLayout(optimize_layout)
-        layout_raster.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # layout_raster.setAlignment(Qt.AlignmentFlag.AlignTop)
         
-        
+        # Add the error message window
+        #error_row = 12
+        #self.error_message_board = QTextEdit()
+        #layout_controller.addWidget(self.error_message_board, error_row, 0, 1, 4)
         
         
         self.signal_timer = QTimer(self)
@@ -310,16 +373,14 @@ class MainWindow(QMainWindow):
         # add plot !!!!
         keyboard_layout = QVBoxLayout()
         self.keyboard_label = QLabel()
-
+        
         self.keyboard_map = QPixmap('keyboard_description.png')
         # self.keyboard_label.setPixmap(self.keyboard_map)
         self.keyboard_control_timer = QTimer(self)
-        self.keyboard_control_message = QLabel("   ")
-        self.keyboard_control_message.setStyleSheet('color: red')
 
-        keyboard_layout.addWidget(self.keyboard_control_button)
+        # keyboard_layout.addWidget(self.keyboard_control_button)
         
-        keyboard_layout.addWidget(self.keyboard_control_message)
+        #keyboard_layout.addWidget(self.keyboard_control_message)
         self.keyboard_control_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         keyboard_layout.addWidget(self.keyboard_label)
         keyboard_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -334,11 +395,14 @@ class MainWindow(QMainWindow):
         layoutbigger = QVBoxLayout()
         layoutbigger.addLayout(layoutbig)
         
+        
         layoutbigger.addLayout(layoutbotter)
         widget = QWidget()
         widget.setLayout(layoutbigger)
         self.setCentralWidget(widget)
-
+        
+        
+        
     def pos_value_changed(self):
         """
         Function that is initiated whenever a value in one of the position
@@ -351,6 +415,14 @@ class MainWindow(QMainWindow):
     #                              self.x_stepper_box.value(), self.y_stepper_box.value(), self.z_stepper_box.value()])
 
     def sss_value_changed(self, val):
+        """
+        When step size value is changed in window, the jog step size of the
+        stepper controller is adjusted to the chosen value
+        """
+        for i in range(2):
+            self.setup.jog_step_size[i] = float(val)
+            self.setup.jog_step_size_int[i] = int(self.setup.jog_step_size[i] * self.setup.stepper.calibration_number[i])
+    def piezo_sss_value_changed(self, val):
         """
         When step size value is changed in window, the jog step size of the
         stepper controller is adjusted to the chosen value
@@ -388,7 +460,33 @@ class MainWindow(QMainWindow):
             box.setValue(result[i])
         self.plot_raster(X, Y, Z.T)
         
-
+    def run_piezo_raster(self):
+        """
+        Runs a raster scan with the stepper motor controller using the values from the 
+        corresponding boxes (width and step size)
+        """
+        axes = []
+        if self.piezo_x_checkbox.isChecked():
+            axes.append(0)
+        if self.piezo_y_checkbox.isChecked():
+            axes.append(1)
+        if self.piezo_z_checkbox.isChecked():
+            axes.append(2)
+        print(axes)
+        if len(axes) != 2:
+            raise ValueError("Two axes can be scanned at a time")
+            
+        _, _, _, _, Z, X, Y = self.setup.run_piezo_raster(width = [float(self.piezo_step_scan_width_x.text()),
+                                                         float(self.piezo_step_scan_width_y.text())], 
+                                                step_size = float(self.piezo_step_size_box.text()),
+                                                axes = axes)
+        
+        #result = self.setup.stepper.get_positions()
+        # Loop below sets the found values in the position boxes of the window.
+        # for i, box in enumerate([self.x_stepper_box, self.y_stepper_box, self.z_stepper_box]):
+        #     box.setValue(result[i])
+        self.plot_raster(X, Y, Z)
+        
 
     def plot_raster(self, X, Y, Z):
         """
@@ -491,12 +589,13 @@ class MainWindow(QMainWindow):
             self.powcombobox.addItem('NiDAQ')
         if self.setup.mpm is not None and self.powcombobox.findText('Santec MPM-210') == -1:
             self.powcombobox.addItem('Santec MPM-210')
-    def disable_channel(self, checked, chan):
-        
-        if checked == True:
+    def disable_channel(self, button, chan):
+        if button.isChecked() == True:
             self.setup.stepper.disable_channel(chan)
+            button.setText("Enable")
         else:
             self.setup.stepper.enable_channel(chan)
+            button.setText("Disable")
     def home_stepper_channel(self, chan):
         self.setup.stepper.home(chan)
         box = [self.x_stepper_box, self.y_stepper_box, self.z_stepper_box][chan - 1]
@@ -568,6 +667,11 @@ class MainWindow(QMainWindow):
             for i, box in enumerate([self.x_box, self.y_box, self.z_box,
                         self.x_stepper_box, self.y_stepper_box, self.z_stepper_box]):
                 box.setValue(pos[i])
+    def saveFunc(self):
+        name = QFileDialog.getSaveFileName(self, 'Save File',"Pickle (*.pkl)")
+        
+        with open(name[0] + '.pkl', 'wb') as f:
+            pickle.dump(self.setup.raster_data, f)
     def closeEvent(self, *args, **kwargs):
         self.signal_button.setChecked(False) # If this not done some error with the Santec powermeter connection occurs.
         if self.setup.simulate != True:

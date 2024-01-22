@@ -17,11 +17,16 @@ def flip_every_second_row(A):
             mat[i, :] = np.flip(B[i, :])
     return mat
 
-def create_raster_array(c, w, volt_step, coordinates, guess):
+def create_raster_array(center, width, volt_step, coordinates, guess):
     coordinates = np.sort(coordinates)
     guessAxes = np.setdiff1d([0, 1, 2, 3], coordinates)
-    xcoords = np.arange(c[0] - w[0] / 2, c[0] + w[0] / 2 + volt_step, volt_step)
-    ycoords = np.arange(c[1] - w[1] / 2, c[1] + w[1] / 2 + volt_step, volt_step)
+    xi = center[0] - width[0]/2 if center[0] - width[0]/2 >= 0 else 0
+    xf = center[0] + width[0]/2 if center[0] + width[0]/2 <= 10 else 10
+    yi = center[1] - width[1]/2 if center[1] - width[1]/2 >= 0 else 0
+    yf = center[1] + width[1]/2 if center[1] + width[1]/2 <= 10 else 10
+    
+    xcoords = np.arange(xi, xf + volt_step, volt_step)
+    ycoords = np.arange(yi, yf + volt_step, volt_step)
     total_steps = len(xcoords)
     mat = np.zeros([4, total_steps])
     for i, V in enumerate(ycoords):
@@ -37,17 +42,22 @@ def create_raster_array(c, w, volt_step, coordinates, guess):
             raster_positions = np.concatenate((raster_positions, mat), axis=1)
 
     raster_positions[guessAxes, :] = np.concatenate((np.ones([1, len(raster_positions[0, :])])*guess[0], np.ones([1, len(raster_positions[0, :])])*guess[1]),axis=0)
+
     return raster_positions
 
-def single_raster_scan(dq, c, w, volt_step, coordinates, guess, simulate = False):
+def single_raster_scan(dq, center, width, volt_step, coordinates, guess, simulate = False):
     guessAxes = np.setdiff1d([0, 1, 2, 3], coordinates)
-
-    xcoords = np.arange(c[0] - w[0] / 2, c[0] + w[0] / 2 + volt_step, volt_step)
-    ycoords = np.arange(c[1] - w[1] / 2, c[1] + w[1] / 2 + volt_step, volt_step)
-    raster_positions = create_raster_array(c, w, volt_step, coordinates, guess)
+    xi = center[0] - width[0]/2 if center[0] - width[0]/2 >= 0 else 0
+    xf = center[0] + width[0]/2 if center[0] + width[0]/2 <= 10 else 10
+    yi = center[1] - width[1]/2 if center[1] - width[1]/2 >= 0 else 0
+    yf = center[1] + width[1]/2 if center[1] + width[1]/2 <= 10 else 10
+    
+    xcoords = np.arange(xi, xf + volt_step, volt_step)
+    ycoords = np.arange(yi, yf + volt_step, volt_step)
+    raster_positions = create_raster_array(center, width, volt_step, coordinates, guess)
     initial_volt = np.zeros(4)
-    initial_volt[coordinates[0]] = c[0] - w[0]/2
-    initial_volt[coordinates[1]] = c[1] - w[1] / 2
+    initial_volt[coordinates[0]] = xi
+    initial_volt[coordinates[1]] = yi
     initial_volt[guessAxes] = guess
 
     dq.set_volt(initial_volt)

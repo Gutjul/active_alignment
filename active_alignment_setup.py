@@ -77,6 +77,8 @@ class Active_Alignment_Setup():
         self.simulate = simulate
         self.position = np.zeros(6)
         self.stepper_axes = stepper_axes
+        
+        self.piezo_calibration = np.array([4.645, 4.616, 4.707]) # Numbers to convert from voltage on DAQ to physical position given in microns/V
         if self.simulate == False:
             self.piezo = bpc303.BPC303(piezo_ID)
             self.stepper = BSC203(stepper_ID, axes = self.stepper_axes)
@@ -203,6 +205,7 @@ class Active_Alignment_Setup():
             algorithm = Hill_Climb(self, axes = axes,
                                   step_size = step_size, settle_time = 0.0)
             return algorithm.iterate()
+        
     def set_position(self, pos):
         """
         Sets position of piezo and stepper motor
@@ -295,7 +298,17 @@ class Active_Alignment_Setup():
                 return self.tlpm.power.value
         else:
             return self.dist.pdf(self.position)
-    def raster_scan(self):
+    def run_piezo_raster(self, width = [30, 30], step_size = 0.1, axes = [0, 1], plot = False):
+            
+    # def run_piezo_raster(self, width = [30, 30], step_size = 0.1, axes = [0, 1], plot = False):
+    #     center = self.position[axes]
+    #     const_axis = np.setdiff1d([0, 1, 2], axes)
+    #     const_pos = self.position[const_axis]
+    #     # Now convert from position to a voltage on the DAQ
+        
+    #     raster_scan.single_raster_scan(self.dq, center, width, step_size, axes, [const_volt, 0], simulate = False)
+        
+        
         """
         Performs a raster scan using the NiDAQ outputs connected to the piezo 
         controller channels.
@@ -306,20 +319,36 @@ class Active_Alignment_Setup():
         is kept here.
         """
         if self.DAQ == "NiDAQ":
-            self.set_piezo_position([0, 0, self.position[2]])
+            init_position = np.array(self.position[0:3]) # Initial position before raster scan
+            center = np.divide(init_position[axes], self.piezo_calibration[axes])
+            width = np.array(width)
+            width = np.divide(np.array(width), self.piezo_calibration[axes]) #
             
+            const_axis = np.setdiff1d([0, 1, 2], axes)[0]
+            const_pos = self.position[const_axis]
+            # print("Center: " + str(center))
+            # print("Width: " + str(width))
+            # print("const axis: " + str(const_axis))
+            # print("const_pos: " + str(const_pos))
+            init_position[axes] = [0, 0]
+            self.set_piezo_position(init_position) # Set the scanning axes at 0
+             
             raster_results, raster_positions, local_max, max_val, Z, X, Y = raster_scan.single_raster_scan(
-                self.NiDAQ, [5, 5], [10, 10], self.step_size, [0, 1], [0, 0], self.simulate)
+                self.NiDAQ, center, width, step_size, axes, [0, 0], self.simulate)
             self.NiDAQ.set_volt([0, 0, 0, 0])
             # Now translating from voltages on DAQ to physical positions
-            X = X * self.piezo_calibration[0]
-            Y = Y * self.piezo_calibration[1]
-            local_max[0] = self.piezo_calibration[0]*local_max[0]
-            local_max[1] = self.piezo_calibration[1]*local_max[1]
-            self.set_piezo_position([local_max[0], local_max[1], self.position[2]])
+            X = X * self.piezo_calibration[axes[0]]
+            Y = Y * self.piezo_calibration[axes[1]]
+            local_max[axes[0]] = self.piezo_calibration[axes[0]]*local_max[0]
+            local_max[axes[1]] = self.piezo_calibration[axes[1]]*local_max[1]
+            end_position = init_position
+            end_position[axes] = local_max
+            end_position[const_axis] = const_pos
+            self.set_piezo_position(end_position)
+            self.raster_data = {'X': X, 'Y': Y, 'Z': Z}
             return raster_results, raster_positions, local_max, max_val, Z, X, Y
         else:
-            print("Current DAQ has to be NiDAQ to perform piezo raster scan")
+            print("Current DAQ has to be USB-6343 (NiDAQ) to perform piezo raster scan")
 
     def run_stepper_raster(self, width = [0.1, 0.1], step_size = 0.01, plot = False):
         """
@@ -397,7 +426,7 @@ class Active_Alignment_Setup():
             self.set_stepper_position([center[0], center[1], yaw]) # if so, go back to initial position before scan
         else: # Else put FA at maximum position
             self.set_stepper_position([positions_x[ind[0]], positions_y[ind[1]], yaw])
-        
+        self.raster_data = {'X': X, 'Y': Y, 'Z': Z}
         if plot == True:
             
             fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -407,6 +436,7 @@ class Active_Alignment_Setup():
             ax.set_ylabel("Y position [microns]", fontsize=10, rotation=0)
             ax.set_zlabel("Photodetector voltage [V]", fontsize=10, rotation=0)
         return X, Y, Z
+
     def find_power_meters(self):
         """
         Locates connected power meters and retrieves their addresses wihtout connecting
