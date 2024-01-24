@@ -475,7 +475,7 @@ class MainWindow(QMainWindow):
         if self.piezo_z_checkbox.isChecked():
             axes.append(2)
         if len(axes) != 2:
-            raise ValueError("Two axes can be scanned at a time")
+            raise ValueError("Only two axes can be scanned at a time")
             
         _, _, _, _, Z, X, Y = self.setup.run_piezo_raster(width = [float(self.piezo_step_scan_width_x.text()),
                                                          float(self.piezo_step_scan_width_y.text())], 
